@@ -48,4 +48,3 @@ $body = @{
 #
 Update-MgIdentityConditionalAccessNamedLocation -NamedLocationId 'ipNL' -BodyParameter $body
 
-Write-Host "New IP address for location Hetzles: $CurrentPubIP"
