@@ -27,6 +27,7 @@
 
         .Version
         - 1.0 creation 03/30/24
+        - 1.1 Teams command line issues fixed
 
         
     #>
