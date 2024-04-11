@@ -96,7 +96,7 @@ Start-Process -wait -FilePath "$InstallPath\MicrosoftEdgeWebView2RuntimeInstalle
 # Install New MS Teams MSIX
 #
 Write-Host "`nInstall New Microsoft Teams. Please wait.`n"
-Start-Process -wait -FilePath "$InstallPath\teamsbootstrapper.exe" -Args '-p -o "$InstallPath\MSTeams-x64.msix"'
+Start-Process -wait -FilePath "$InstallPath\teamsbootstrapper.exe" -Args "-p -o ""$InstallPath\MSTeams-x64.msix"""
 
 
 #
