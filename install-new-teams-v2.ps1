@@ -20,8 +20,6 @@
             
                         
         .NOTES
-            - You must set the variable for the InstallPath.
-            - The InstallPath must contain: MSTeams-x64.msix,teamsbootstrapper.exe and MicrosoftEdgeWebView2RuntimeInstallerX64.exe
             - You must run the script as administrator but will be chechked by the script.
             - You need free internet access to download the resources
 
