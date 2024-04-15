@@ -2,7 +2,7 @@
         .SYNOPSIS
             Installs the new Microsoft Teams x64 on Windows Server 2019, including the Outlook Add-in
             and sets required registry keys. The new Teams is based on EdgeWebView Runtime and will
-            be installed as well. With Server 2019, additional updates and .NET 4.8.x is required.
+            be installed as well. With Server 2019, additional updates and .NET 4.8.x are required.
 
             You must set per User registry keys to load the Outlook Add-in via GPO, WEM etc. For GPO
             find the xml file at https://www.koetzingit.de with the article to this script.
