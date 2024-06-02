@@ -33,6 +33,7 @@
         - 1.2 Check for .NET Framework and pending reboots
         - 1.3 Alternatve download because of dynmaic content for the nativ utility
         - 1.4 Extracting the MSU package to speedup the installation
+        - 1.5 Temas register timeout 
 
         
     #>
@@ -142,6 +143,11 @@ Start-BitsTransfer -Source 'https://go.microsoft.com/fwlink/?linkid=2196106' -De
 Write-Host "`nInstall new Teams`n"
 Start-Process -wait -NoNewWindow -FilePath DISM.exe -Args "/Online /Add-ProvisionedAppxPackage /PackagePath:$InstallPath\MSTeams-x64.msix /SkipLicense"
 
+#
+# Time to fully register MSIX package
+#
+Write-Host "30 seconds Timout for the MSIX package to fully register."
+Start-Sleep -Seconds 30
 
 
 #
