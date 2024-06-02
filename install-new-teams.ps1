@@ -28,6 +28,7 @@
         .Version
         - 1.0 creation 03/30/24
         - 1.1 Teams command line issues fixed
+        - 1.2 Team register timeout
 
         
     #>
@@ -99,6 +100,11 @@ Start-Process -wait -FilePath "$InstallPath\MicrosoftEdgeWebView2RuntimeInstalle
 Write-Host "`nInstall New Microsoft Teams. Please wait.`n"
 Start-Process -wait -FilePath "$InstallPath\teamsbootstrapper.exe" -Args "-p -o ""$InstallPath\MSTeams-x64.msix"""
 
+#
+# Time to fully register MSIX package
+#
+Write-Host "30 seconds Timout for the MSIX package to fully register."
+Start-Sleep -Seconds 30
 
 #
 # Set Registry values for VDI and Citrix
