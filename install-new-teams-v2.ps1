@@ -28,6 +28,7 @@
         .Version
         - 1.0 creation 03/30/24
         - 2.0 Download source media
+        - 2.1 Temas register timeout
 
         
     #>
@@ -103,6 +104,11 @@ Start-BitsTransfer -Source "https://go.microsoft.com/fwlink/?linkid=2196106" -De
 Start-BitsTransfer -Source "https://go.microsoft.com/fwlink/?linkid=2243204" -Destination "$InstallPath\teamsbootstrapper.exe" -Description "Download teams bootstrapper" | Out-Null
 Start-Process -wait -FilePath "$InstallPath\teamsbootstrapper.exe" -Args "-p -o ""$InstallPath\MSTeams-x64.msix""" -NoNewWindow| Out-Null
 
+#
+# Time to fully register MSIX package
+#
+Write-Host "30 seconds Timout for the MSIX package to fully register."
+Start-Sleep -Seconds 30
 
 #
 # Set Registry values for VDI and Citrix
