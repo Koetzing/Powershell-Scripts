@@ -146,8 +146,8 @@ Start-Process -wait -NoNewWindow -FilePath DISM.exe -Args "/Online /Add-Provisio
 #
 # Time to fully register MSIX package
 #
-Write-Host "30 seconds Timout for the MSIX package to fully register."
-Start-Sleep -Seconds 30
+Write-Host "45 seconds Timeout for the MSIX package to fully register."
+Start-Sleep -Seconds 45
 
 
 #
@@ -266,7 +266,11 @@ Start-BitsTransfer -Source 'https://go.microsoft.com/fwlink/?linkid=2196106' -De
 Write-Host "`nInstall new Teams`n"
 Start-Process -wait -NoNewWindow -FilePath DISM.exe -Args "/Online /Add-ProvisionedAppxPackage /PackagePath:$InstallPath\MSTeams-x64.msix /SkipLicense"
 
-
+#
+# Time to fully register MSIX package
+#
+Write-Host "45 seconds Timeout for the MSIX package to fully register."
+Start-Sleep -Seconds 45
 
 #
 # Set Registry values for VDI and Citrix
