@@ -33,7 +33,8 @@
         - 1.2 Check for .NET Framework and pending reboots
         - 1.3 Alternatve download because of dynmaic content for the nativ utility
         - 1.4 Extracting the MSU package to speedup the installation
-        - 1.5 Temas register timeout 
+        - 1.5 Temas register timeout
+        - 1.6 Re-Run the script for a teams upgrade and the add-in will be unisntalled first.
 
         
     #>
@@ -135,7 +136,17 @@ Start-BitsTransfer -Source 'https://go.microsoft.com/fwlink/?linkid=2124701' -De
 Write-Host "`nInstall EdgeWebView Runtime. Please wait.`n"
 Start-Process -wait -FilePath "$InstallPath\MicrosoftEdgeWebView2RuntimeInstallerX64.exe" -Args "/silent /install"
 
+#
+# Remove old Teams Add-in at a teams upgrade
+#
+$oldversion = try{get-package -Name 'Microsoft Teams Meeting Add-in*' -ea 0}catch{$null}
+    if ($oldversion){
+        $oldpackage = ($oldversion.FastPackageReference).ToString()
+        Start-Process -NoNewWindow -FilePath "msiexec.exe" -ArgumentList "/X $oldpackage /qn /norestart" -Wait -ea 0
+start-sleep -Seconds 10 -ErrorAction SilentlyContinue
+        }
 
+        
 #
 # Install new Teams
 #
@@ -257,6 +268,16 @@ Start-Process "msiexec" -ArgumentList @("/i ""$InstallPath\MSTeamsNativeUtility.
 Start-BitsTransfer -Source 'https://go.microsoft.com/fwlink/?linkid=2124701' -Destination "$InstallPath\MicrosoftEdgeWebView2RuntimeInstallerX64.exe" -Description "Download EdgeWebView Runtime"
 Write-Host "`nInstall EdgeWebView Runtime. Please wait.`n"
 Start-Process -wait -FilePath "$InstallPath\MicrosoftEdgeWebView2RuntimeInstallerX64.exe" -Args "/silent /install"
+
+#
+# Remove old Teams Add-in at a teams upgrade
+#
+$oldversion = try{get-package -Name 'Microsoft Teams Meeting Add-in*' -ea 0}catch{$null}
+    if ($oldversion){
+        $oldpackage = ($oldversion.FastPackageReference).ToString()
+        Start-Process -NoNewWindow -FilePath "msiexec.exe" -ArgumentList "/X $oldpackage /qn /norestart" -Wait -ea 0
+start-sleep -Seconds 10 -ErrorAction SilentlyContinue
+        }
 
 
 #
