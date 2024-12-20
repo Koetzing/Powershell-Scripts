@@ -1,4 +1,4 @@
-﻿    <#
+<#
         .SYNOPSIS
             Installs the new Microsoft Teams x64 on Windows Server 2022, Windows 10 and Windows 11 multiuser,
             including the Outlook Add-in and sets required registry keys for Citrix VDA as well. 
@@ -32,7 +32,7 @@
         - 2.2 Uninstall Outlook Add-in for new Version
 
         
-    #>
+ #>
 
 
 #
