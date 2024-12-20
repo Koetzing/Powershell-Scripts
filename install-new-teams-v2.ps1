@@ -29,6 +29,7 @@
         - 1.0 creation 03/30/24
         - 2.0 Download source media
         - 2.1 Temas register timeout
+        - 2.2 Uninstall Outlook Add-in for new Version
 
         
     #>
@@ -94,7 +95,15 @@ Start-BitsTransfer -Source 'https://go.microsoft.com/fwlink/?linkid=2124701' -De
 Write-Host "`nInstall EdgeWebView Runtime. Please wait.`n"
 Start-Process -wait -FilePath "$InstallPath\MicrosoftEdgeWebView2RuntimeInstallerX64.exe" -Args "/silent /install" | Out-Null
 
-
+#
+# Remove old Teams Add-in at a teams upgrade
+#
+$oldversion = try{get-package -Name 'Microsoft Teams Meeting Add-in*' -ea 0}catch{$null}
+    if ($oldversion){
+        $oldpackage = ($oldversion.FastPackageReference).ToString()
+        Start-Process -NoNewWindow -FilePath "msiexec.exe" -ArgumentList "/X $oldpackage /qn /norestart" -Wait -ea 0
+        start-sleep -Seconds 10 -ErrorAction SilentlyContinue
+        }
 
 #
 # Install New MS Teams MSIX
