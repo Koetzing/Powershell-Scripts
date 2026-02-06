@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Citrix LAS Connectivity Check - International Edition
+    Citrix LAS Connectivity Check
 
 .DESCRIPTION
     Diagnostic tool for Citrix Local Activation Server (LAS) connectivity.
@@ -42,9 +42,6 @@ Clear-Host
 Write-Host "`n==================================================================================" -ForegroundColor Cyan
 Write-Host "   CITRIX LICENSE SERVER - CONNECTIVITY DIAGNOSTICS" -ForegroundColor White
 Write-Host "==================================================================================" -ForegroundColor Cyan
-Write-Host "Author : Thomas Koetzing (www.koetzingit.de)" -ForegroundColor Gray
-Write-Host "Version: 1.0.0.0 (2026-02-06)" -ForegroundColor Gray
-Write-Host "----------------------------------------------------------------------------------" -ForegroundColor DarkGray
 
 # --- PROXY DETECTION & INTERACTION ---
 $activeProxy = $null
