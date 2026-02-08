@@ -1,11 +1,13 @@
 <#
 .SYNOPSIS
-    Citrix LAS Connectivity Check
+    Citrix LAS Diagnostic Tool - ULTIMATE EDITION
+    Features: Registry-Deep-Scan, Smart Connectivity Check, Version Check, Service Check, Time Sync
 
 .DESCRIPTION
-    Diagnostic tool for Citrix Local Activation Server (LAS) connectivity.
-    Checks API endpoints, SSL certificates, and proxy configurations.
-    Interprets HTTP 403/404 status codes correctly as successful connectivity.
+    Diagnostic tool for Citrix Cloud License Server connectivity.
+    Checks API endpoints, SSL certificates, proxy configurations, and registry keys.
+    Additionally checks services and time synchronization (Time Drift).
+    Evaluates HTTP 403/404 status codes correctly as successful connections.
 
 .AUTHOR
     Thomas Koetzing
@@ -14,169 +16,368 @@
     www.koetzingit.de
 
 .VERSION
-    1.0.0.0
+    2.23.0.0
 
 .DATE
-    2026-02-06
+    2026-02-08
 #>
-
 param([string]$ManualProxy = "")
 
 # --- SETUP ---
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $ErrorActionPreference = "SilentlyContinue"
-$testUrlForProxy = "https://las.cloud.com"
+$regPath64 = "HKLM:\SOFTWARE\Microsoft\.NetFramework\v4.0.30319"
+$regPath32 = "HKLM:\SOFTWARE\Wow6432Node\Microsoft\.NetFramework\v4.0.30319"
 
-# --- TARGET LIST ---
-$targets = @(
-    @{ Name="Activation Service";    Url="https://las.cloud.com" },
-    @{ Name="Telemetry / CIS";       Url="https://cis.citrix.com" },
-    @{ Name="Trust API (Network)";   Url="https://trust.citrixnetworkapi.net" },
-    @{ Name="Trust API (Workspace)"; Url="https://trust.citrixworkspacesapi.net" },
-    @{ Name="Core Services";         Url="https://core.citrixworkspacesapi.net" },
-    @{ Name="Customer Services";     Url="https://customers.citrixworkspacesapi.net" }
-)
+function Write-Banner {
+    Clear-Host
+    Write-Host "===================================================================" -ForegroundColor Cyan
+    Write-Host "   CITRIX LAS CONNECTIVITY & HEALTH CHECK v2.23" -ForegroundColor White
+    Write-Host "   (c) Koetzing IT - www.koetzingit.de" -ForegroundColor Gray
+    Write-Host "===================================================================" -ForegroundColor Cyan
+    Write-Host "`n"
+}
 
-# --- HEADER & CREDITS ---
-Clear-Host
-Write-Host "`n==================================================================================" -ForegroundColor Cyan
-Write-Host "   CITRIX LICENSE SERVER - CONNECTIVITY DIAGNOSTICS" -ForegroundColor White
-Write-Host "==================================================================================" -ForegroundColor Cyan
+function Show-Spinner {
+    param([string]$Activity)
+    Write-Host "$Activity " -NoNewline
+    $chars = "|","/","-","\"
+    for($i=0; $i -lt 10; $i++) {
+        foreach($c in $chars) {
+            Write-Host $c -NoNewline -ForegroundColor Yellow
+            Start-Sleep -Milliseconds 50
+            Write-Host "`b" -NoNewline
+        }
+    }
+    Write-Host "DONE" -ForegroundColor Green
+}
 
-# --- PROXY DETECTION & INTERACTION ---
-$activeProxy = $null
-$modeInfo = ""
-$modeColor = "Green"
+function Test-RegKey {
+    param($Path, $Name)
+    $val = (Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue).$Name
+    if ($val -eq 1) { return $true } else { return $false }
+}
 
-# 1. Check CLI Parameter
-if ($ManualProxy) {
-    $activeProxy = New-Object System.Net.WebProxy($ManualProxy)
-    $modeInfo = "MANUAL PROXY (CLI Argument: $ManualProxy)"
-    $modeColor = "Yellow"
-} 
-else {
-    # 2. Check System/IE Proxy
-    $sysProxy = [System.Net.WebRequest]::GetSystemWebProxy()
-    $sysProxy.Credentials = [System.Net.CredentialCache]::DefaultCredentials
-    $proxyUri = $sysProxy.GetProxy($testUrlForProxy)
+# --- START ---
+Write-Banner
+
+# 1. LICENSE SERVER VERSION
+Write-Host " PHASE 1: LICENSE SERVER VERSION" -ForegroundColor Yellow
+Write-Host " ------------------------------" -ForegroundColor DarkGray
+Show-Spinner "Checking Version Compatibility..."
+
+# Minimum requirement for Cloud/LAS
+$minVersion = [version]"11.17.2.0"
+$detectedVersion = $null
+$displayVersion = $null 
+$detectionMethod = ""
+
+# Helper to clean version strings
+function Clean-VersionString {
+    param($v)
+    if (-not $v) { return $null }
+    $clean = $v.Split(' ')[0]
+    return $clean
+}
+
+# Attempt 1: Registry (Prioritized: LicenseServer\Install)
+if (-not $detectedVersion) {
+    $regPaths = @(
+        "HKLM:\SOFTWARE\WOW6432Node\Citrix\LicenseServer\Install",
+        "HKLM:\SOFTWARE\Citrix\LicenseServer\Install",
+        "HKLM:\SOFTWARE\WOW6432Node\Citrix\Licensing",
+        "HKLM:\SOFTWARE\Citrix\Licensing",
+        "HKLM:\SOFTWARE\WOW6432Node\Citrix\Licensing\LS",
+        "HKLM:\SOFTWARE\Citrix\Licensing\LS"
+    )
     
-    # Compare Hosts (Avoids string mismatch due to trailing slashes)
-    $origHost = ([System.Uri]$testUrlForProxy).Host
-    $proxyHost = $proxyUri.Host
-
-    if ($origHost -ne $proxyHost) {
-        # System Proxy Detected
-        $modeInfo = "SYSTEM PROXY DETECTED ($($proxyUri.Authority))"
-        $modeColor = "Cyan"
-        $activeProxy = $sysProxy
-    } 
-    else {
-        # 3. No System Proxy -> ASK USER
-        Write-Host "`nNo system proxy detected (Direct Connection)." -ForegroundColor Gray
-        Write-Host "Do you want to enter a manual proxy? (e.g. http://192.168.1.1:8080)" -ForegroundColor Yellow
-        $userInput = Read-Host "Enter Proxy or press ENTER to skip"
-
-        if ($userInput -ne "") {
-            try {
-                $activeProxy = New-Object System.Net.WebProxy($userInput)
-                $modeInfo = "MANUAL PROXY (User Input: $userInput)"
-                $modeColor = "Yellow"
-            } catch {
-                Write-Host "Invalid Proxy Format! Fallback to Direct." -ForegroundColor Red
-                $modeInfo = "DIRECT CONNECTION (Fallback)"
+    foreach ($path in $regPaths) {
+        try {
+            $rawVer = (Get-ItemProperty $path -Name "Version" -ErrorAction Stop).Version
+            if ($rawVer) {
+                $displayVersion = $rawVer 
+                $cleanVer = Clean-VersionString $rawVer
+                if ($cleanVer) { 
+                    $detectedVersion = [version]$cleanVer
+                    $detectionMethod = "Registry (LicenseServer Key)"
+                    break 
+                }
             }
-        } else {
-            $modeInfo = "DIRECT CONNECTION (No Proxy)"
-            $modeColor = "Green"
-            $activeProxy = $sysProxy
+        } catch {}
+    }
+}
+
+# Attempt 2: Uninstall Keys
+if (-not $detectedVersion) {
+    try {
+        $uninstallPaths = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        )
+        
+        foreach ($uPath in $uninstallPaths) {
+            $pkg = Get-ItemProperty $uPath -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "Citrix Licens*" } | Select-Object -First 1
+            if ($pkg -and $pkg.DisplayVersion) {
+                $displayVersion = $pkg.DisplayVersion
+                $cleanVer = Clean-VersionString $pkg.DisplayVersion
+                $detectedVersion = [version]$cleanVer
+                $detectionMethod = "Registry (Uninstall Info)"
+                break
+            }
+        }
+    } catch {}
+}
+
+# Attempt 3: WMI
+if (-not $detectedVersion) {
+    try {
+        $wmi = Get-WmiObject -Namespace "ROOT\CitrixLicensing" -Class "Citrix_GT_License_Server" -ErrorAction Stop
+        if ($wmi -and $wmi.Version) {
+            $displayVersion = $wmi.Version
+            $cleanVer = Clean-VersionString $wmi.Version
+            $detectedVersion = [version]$cleanVer
+            $detectionMethod = "WMI"
+        }
+    } catch {}
+}
+
+# Attempt 4: File
+if (-not $detectedVersion) {
+    $paths = @(
+        "${env:ProgramFiles(x86)}\Citrix\Licensing\LS\lmadmin.exe",
+        "${env:ProgramFiles}\Citrix\Licensing\LS\lmadmin.exe"
+    )
+    foreach ($p in $paths) {
+        if (Test-Path $p) {
+            try {
+                $fvi = (Get-Item $p).VersionInfo
+                if ($fvi.FileVersion) { 
+                    $rawVer = $fvi.FileVersion -replace ',', '.'
+                    $displayVersion = $rawVer
+                    $cleanVer = Clean-VersionString $rawVer
+                    $detectedVersion = [version]$cleanVer
+                    $detectionMethod = "File Version (lmadmin.exe)"
+                }
+            } catch {}
+            break
         }
     }
 }
 
-Write-Host "`nConnection Mode : " -NoNewline
-Write-Host "$modeInfo" -ForegroundColor $modeColor
-Write-Host "----------------------------------------------------------------------------------`n"
-
-# --- TABLE HEADER ---
-Write-Host "SERVICE NAME                    STATUS    DETAILS" -ForegroundColor DarkGray
-Write-Host "----------------------------    ------    ----------------------------------------" -ForegroundColor DarkGray
-
-# --- MAIN LOOP ---
-foreach ($t in $targets) {
-    $status = "FAIL"
-    $color = "Red"
-    $msg = ""
-
-    try {
-        $req = [System.Net.HttpWebRequest]::Create($t.Url)
-        $req.Timeout = 5000 
-        $req.Proxy = $activeProxy
-        
-        # Execute Request
-        $resp = $req.GetResponse()
-        
-        # HTTP 200 OK
-        $code = [int]$resp.StatusCode
-        $resp.Close()
-        
-        $status = " OK "
-        $color = "Green"
-        $msg = "HTTP $code - Content OK - SSL: Verified"
-
-    } catch {
-        $ex = $_.Exception
-        # Drill down to InnerException for accurate status codes
-        if ($ex.InnerException) { $ex = $ex.InnerException }
-        
-        $webResp = $ex.Response
-
-        if ($webResp) {
-            $code = [int]$webResp.StatusCode
-            $webResp.Close()
-
-            # LOGIC: 403 & 404 are VALID for Connectivity Checks
-            if ($code -eq 403 -or $code -eq 404) {
-                $status = " OK "
-                $color = "Green"
-                $msg = "HTTP $code - Reachable - SSL: Verified"
-            }
-            elseif ($code -ge 500) {
-                $status = "WARN"
-                $color = "Yellow"
-                $msg = "HTTP $code - Server Side Error - SSL: Verified"
-            }
-            else {
-                $status = "FAIL"
-                $color = "Red"
-                $msg = "HTTP $code - Unexpected response"
-            }
-        }
-        else {
-            # --- NETWORK / SSL FAILURE ---
-            $status = "FAIL"
-            $color = "Red"
-            
-            if ($ex.Status -eq "NameResolutionFailure") { 
-                $msg = "DNS Error (Host not found)" 
-            }
-            elseif ($ex.Status -eq "TrustFailure" -or $ex.Message -match "trust") { 
-                $msg = "SSL ERROR: Certificate Untrusted (Check Proxy/Inspection)" 
-            }
-            elseif ($ex.Status -eq "Timeout") { 
-                $msg = "Network Timeout (Firewall Block)" 
-            }
-            else { 
-                $msg = $ex.Message 
-            }
-        }
+if ($detectedVersion) {
+    Write-Host " Installed Version : $displayVersion" -NoNewline
+    
+    if ($detectedVersion -ge $minVersion) {
+        Write-Host " [ OK ]" -ForegroundColor Green
+        Write-Host " Compatibility     : Compatible with Citrix Cloud LAS." -ForegroundColor Gray
+        Write-Host " Source            : $detectionMethod" -ForegroundColor DarkGray
+    } else {
+        Write-Host " [ FAIL ]" -ForegroundColor Red
+        Write-Host " Compatibility     : OUTDATED! Minimum required: $minVersion" -ForegroundColor Yellow
+        Write-Host " Action            : Update License Server immediately." -ForegroundColor Red
+        Write-Host " Source            : $detectionMethod" -ForegroundColor DarkGray
     }
-
-    # --- OUTPUT ROW ---
-    $outName = $t.Name.PadRight(28)
-    Write-Host "$outName" -NoNewline
-    Write-Host "[$status]" -ForegroundColor $color -NoNewline
-    Write-Host "    $msg" -ForegroundColor Gray
+} else {
+    Write-Host " Version Check     : [ FAIL ]" -ForegroundColor Red
+    Write-Host " Details           : Could not determine installed version via Registry or File." -ForegroundColor Gray
 }
 Write-Host "`n"
-Write-Host "Press ENTER to exit..." -ForegroundColor DarkGray
-$null = Read-Host
+
+# 2. SERVICE STATUS
+Write-Host " PHASE 2: SERVICE STATUS" -ForegroundColor Yellow
+Write-Host " -----------------------" -ForegroundColor DarkGray
+Show-Spinner "Checking critical services..."
+
+$servicesToCheck = @(
+    @{ Name="Citrix Licensing"; Label="Citrix Licensing Service" },
+    @{ Name="CitrixWebServicesforLicensing"; Label="Citrix Web Services for Licensing" }
+)
+
+foreach ($s in $servicesToCheck) {
+    $svcName = $s.Name
+    $svcLabel = $s.Label.PadRight(35)
+    
+    Write-Host " $svcLabel : " -NoNewline
+    
+    $svcObj = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+    
+    if ($svcObj) {
+        if ($svcObj.Status -eq 'Running') {
+             Write-Host "[ RUNNING ]" -ForegroundColor Green
+        } else {
+             Write-Host "[ STOPPED ]" -ForegroundColor Red -NoNewline
+             Write-Host " (Attempting start...)" -ForegroundColor Yellow
+             try {
+                 Start-Service $svcName -ErrorAction Stop
+                 Write-Host " -> Started!" -ForegroundColor Green
+             } catch {
+                 Write-Host " -> Failed to start!" -ForegroundColor Red
+             }
+        }
+    } else {
+        Write-Host "[ MISSING ]" -ForegroundColor Red -NoNewline
+        Write-Host " (Service '$svcName' not found)" -ForegroundColor Gray
+    }
+}
+Write-Host "`n"
+
+
+# 3. SYSTEM HEALTH CHECK (CRYPTO)
+Write-Host " PHASE 3: SYSTEM HEALTH (CRYPTO)" -ForegroundColor Yellow
+Write-Host " -------------------------------" -ForegroundColor DarkGray
+Show-Spinner "Analyzing Crypto Settings..."
+
+$crypto64 = Test-RegKey $regPath64 "SchUseStrongCrypto"
+$crypto32 = Test-RegKey $regPath32 "SchUseStrongCrypto"
+
+Write-Host " TLS 1.2 (64-Bit) : " -NoNewline
+if ($crypto64) { Write-Host "[ OK ]" -ForegroundColor Green } else { Write-Host "[ MISSING ] - Fix required!" -ForegroundColor Red }
+
+Write-Host " TLS 1.2 (32-Bit) : " -NoNewline
+if ($crypto32) { Write-Host "[ OK ]" -ForegroundColor Green } else { Write-Host "[ MISSING ] - Fix required!" -ForegroundColor Red }
+
+if (-not $crypto32) {
+    Write-Host "`n [!] WARNING: 32-Bit Crypto keys are missing. Citrix Service will fail!" -ForegroundColor Red
+}
+Write-Host "`n"
+
+# 4. PROXY DETECTION
+Write-Host " PHASE 4: NETWORK CONFIGURATION" -ForegroundColor Yellow
+Write-Host " ------------------------------" -ForegroundColor DarkGray
+Show-Spinner "Detecting Proxy Configuration..."
+
+$activeProxy = $null
+if ($ManualProxy) {
+    $activeProxy = New-Object System.Net.WebProxy($ManualProxy)
+    Write-Host " MODE: MANUAL ($ManualProxy)" -ForegroundColor Cyan
+} else {
+    $sysProxy = [System.Net.WebRequest]::GetSystemWebProxy()
+    $sysProxy.Credentials = [System.Net.CredentialCache]::DefaultCredentials
+    $testUrl = "https://las.cloud.com"
+    $proxyUri = $sysProxy.GetProxy($testUrl)
+    
+    if (([System.Uri]$testUrl).Host -ne $proxyUri.Host) {
+        Write-Host " MODE: SYSTEM PROXY DETECTED ($($proxyUri.Authority))" -ForegroundColor Cyan
+        $activeProxy = $sysProxy
+    } else {
+        Write-Host " MODE: DIRECT CONNECTION (No Proxy)" -ForegroundColor Green
+        $activeProxy = $sysProxy
+    }
+}
+Write-Host "`n"
+
+# 5. ENDPOINT ANALYZER & TIME SYNC
+Write-Host " PHASE 5: ENDPOINT ANALYZER & TIME SYNC" -ForegroundColor Yellow
+Write-Host " --------------------------------------" -ForegroundColor DarkGray
+Show-Spinner "Testing Cloud Endpoints..."
+
+$targets = @(
+    @{ N="Activation Service";    U="https://las.cloud.com" },
+    @{ N="Telemetry / CIS";       U="https://cis.citrix.com" },
+    @{ N="Trust API (Network)";   U="https://trust.citrixnetworkapi.net" },
+    @{ N="Trust API (Workspace)"; U="https://trust.citrixworkspacesapi.net" },
+    @{ N="Core Services";         U="https://core.citrixworkspacesapi.net" },
+    @{ N="Customer Services";     U="https://customers.citrixworkspacesapi.net" }
+)
+
+$timeChecked = $false
+
+foreach ($t in $targets) {
+    $pName = $t.N.PadRight(25)
+    Write-Host " $pName : " -NoNewline
+    
+    # --- COOLNESS FACTOR: ARTIFICIAL SPINNER DELAY ---
+    $spin = @("-", "\", "|", "/")
+    # Simulates approx. 1.2 seconds "Deep Analysis"
+    for ($s=0; $s -lt 15; $s++) {
+        Write-Host $spin[$s % 4] -NoNewline -ForegroundColor Cyan
+        Start-Sleep -Milliseconds 80
+        Write-Host "`b" -NoNewline
+    }
+    # -------------------------------------------------
+    
+    try {
+        $req = [System.Net.HttpWebRequest]::Create($t.U)
+        $req.Timeout = 5000
+        $req.Proxy = $activeProxy
+        $resp = $req.GetResponse()
+        $c = [int]$resp.StatusCode
+        
+        # TIME CHECK (Only once)
+        if (-not $timeChecked -and $resp.Headers["Date"]) {
+            # Explicitly convert to UTC before comparison
+            $serverTime = [DateTime]::Parse($resp.Headers["Date"]).ToUniversalTime()
+            $localTime = [DateTime]::UtcNow
+            $diff = ($serverTime - $localTime).TotalSeconds
+            
+            # Save drift for summary
+            $timeChecked = $true
+            $timeStatus = "OK"
+            $timeColor = "Green"
+            
+            if ([Math]::Abs($diff) -gt 300) { # > 5 Minutes
+                $timeStatus = "FAIL"
+                $timeColor = "Red"
+            } elseif ([Math]::Abs($diff) -gt 120) { # > 2 Minutes
+                $timeStatus = "WARN"
+                $timeColor = "Yellow"
+            }
+            $globalTimeDriftMsg = "Drift: $([Math]::Round($diff, 1)) sec"
+            $globalTimeDriftColor = $timeColor
+        }
+        
+        $resp.Close()
+        Write-Host "[ PASS ]" -ForegroundColor Green -NoNewline
+        Write-Host " (HTTP $c - SSL: Verified)" -ForegroundColor Gray
+    } catch {
+        $ex = $_.Exception; if($ex.InnerException){$ex=$ex.InnerException}
+        $r = $ex.Response
+        if ($r) {
+            $c = [int]$r.StatusCode
+            
+            # TIME CHECK on Error Response
+            if (-not $timeChecked -and $r.Headers["Date"]) {
+                $serverTime = [DateTime]::Parse($r.Headers["Date"]).ToUniversalTime()
+                $localTime = [DateTime]::UtcNow
+                $diff = ($serverTime - $localTime).TotalSeconds
+                $timeChecked = $true
+                $timeStatus = "OK"
+                $timeColor = "Green"
+                 if ([Math]::Abs($diff) -gt 300) { $timeStatus = "FAIL"; $timeColor = "Red" }
+                $globalTimeDriftMsg = "Drift: $([Math]::Round($diff, 1)) sec"
+                $globalTimeDriftColor = $timeColor
+            }
+
+            $r.Close()
+            if ($c -eq 403 -or $c -eq 404) {
+                Write-Host "[ PASS ]" -ForegroundColor Green -NoNewline
+                Write-Host " (HTTP $c - Reachable - SSL: Verified)" -ForegroundColor Gray
+            } else {
+                Write-Host "[ WARN ]" -ForegroundColor Yellow -NoNewline
+                Write-Host " (HTTP $c - SSL: Verified)" -ForegroundColor Gray
+            }
+        } else {
+            Write-Host "[ FAIL ]" -ForegroundColor Red -NoNewline
+            Write-Host " $($ex.Message)" -ForegroundColor Red
+        }
+    }
+}
+Write-Host "`n"
+
+# Summary for Time Sync
+if ($timeChecked) {
+    Write-Host " TIME SYNC CHECK : " -NoNewline
+    if ($globalTimeDriftColor -eq "Green") {
+        Write-Host "[ OK ]" -ForegroundColor Green -NoNewline
+    } else {
+        Write-Host "[ $timeStatus ]" -ForegroundColor $globalTimeDriftColor -NoNewline
+    }
+    Write-Host " ($globalTimeDriftMsg)" -ForegroundColor Gray
+} else {
+    Write-Host " TIME SYNC CHECK : [ SKIP ] (Could not retrieve server time)" -ForegroundColor Gray
+}
+
+Write-Host "`n"
+Write-Host " DIAGNOSTIC COMPLETE." -ForegroundColor White -BackgroundColor DarkBlue
+Write-Host "`n"
+$null = Read-Host " Press ENTER to exit..."
