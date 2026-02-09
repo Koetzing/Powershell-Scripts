@@ -1,13 +1,14 @@
 <#
 .SYNOPSIS
-    Citrix LAS Diagnostic Tool - ULTIMATE EDITION
-    Features: Registry-Deep-Scan, Smart Connectivity Check, Version Check, Service Check, Time Sync
+    Citrix LAS Diagnostic Tool
+    Features: Registry-Deep-Scan, Smart Connectivity Check, Version Check, Service Check, Time Sync, Auto-Fix
 
 .DESCRIPTION
     Diagnostic tool for Citrix Cloud License Server connectivity.
     Checks API endpoints, SSL certificates, proxy configurations, and registry keys.
     Additionally checks services and time synchronization (Time Drift).
     Evaluates HTTP 403/404 status codes correctly as successful connections.
+    Attempts to auto-fix missing TLS registry keys.
 
 .AUTHOR
     Thomas Koetzing
@@ -16,10 +17,10 @@
     www.koetzingit.de
 
 .VERSION
-    2.23.0.0
+    2.29.0.0
 
 .DATE
-    2026-02-08
+    2026-02-09
 #>
 param([string]$ManualProxy = "")
 
@@ -32,7 +33,7 @@ $regPath32 = "HKLM:\SOFTWARE\Wow6432Node\Microsoft\.NetFramework\v4.0.30319"
 function Write-Banner {
     Clear-Host
     Write-Host "===================================================================" -ForegroundColor Cyan
-    Write-Host "   CITRIX LAS CONNECTIVITY & HEALTH CHECK v2.23" -ForegroundColor White
+    Write-Host "   CITRIX LAS CONNECTIVITY & HEALTH CHECK v2.29" -ForegroundColor White
     Write-Host "   (c) Koetzing IT - www.koetzingit.de" -ForegroundColor Gray
     Write-Host "===================================================================" -ForegroundColor Cyan
     Write-Host "`n"
@@ -197,9 +198,9 @@ foreach ($s in $servicesToCheck) {
     $svcName = $s.Name
     $svcLabel = $s.Label.PadRight(35)
     
-    Write-Host " $svcLabel : " -NoNewline
-    
     $svcObj = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+    
+    Write-Host " $svcLabel : " -NoNewline
     
     if ($svcObj) {
         if ($svcObj.Status -eq 'Running') {
@@ -222,22 +223,52 @@ foreach ($s in $servicesToCheck) {
 Write-Host "`n"
 
 
-# 3. SYSTEM HEALTH CHECK (CRYPTO)
-Write-Host " PHASE 3: SYSTEM HEALTH (CRYPTO)" -ForegroundColor Yellow
-Write-Host " -------------------------------" -ForegroundColor DarkGray
+# 3. SYSTEM HEALTH CHECK (CRYPTO & TLS)
+Write-Host " PHASE 3: SYSTEM HEALTH (CRYPTO & TLS)" -ForegroundColor Yellow
+Write-Host " -------------------------------------" -ForegroundColor DarkGray
 Show-Spinner "Analyzing Crypto Settings..."
 
 $crypto64 = Test-RegKey $regPath64 "SchUseStrongCrypto"
 $crypto32 = Test-RegKey $regPath32 "SchUseStrongCrypto"
+$tlsDef64 = Test-RegKey $regPath64 "SystemDefaultTlsVersions"
+$tlsDef32 = Test-RegKey $regPath32 "SystemDefaultTlsVersions"
 
-Write-Host " TLS 1.2 (64-Bit) : " -NoNewline
-if ($crypto64) { Write-Host "[ OK ]" -ForegroundColor Green } else { Write-Host "[ MISSING ] - Fix required!" -ForegroundColor Red }
+Write-Host " Strong Crypto (64-Bit)        : " -NoNewline
+if ($crypto64) { Write-Host "[ OK ]" -ForegroundColor Green } else { Write-Host "[ MISSING ]" -ForegroundColor Red }
 
-Write-Host " TLS 1.2 (32-Bit) : " -NoNewline
-if ($crypto32) { Write-Host "[ OK ]" -ForegroundColor Green } else { Write-Host "[ MISSING ] - Fix required!" -ForegroundColor Red }
+Write-Host " Strong Crypto (32-Bit)        : " -NoNewline
+if ($crypto32) { Write-Host "[ OK ]" -ForegroundColor Green } else { Write-Host "[ MISSING ]" -ForegroundColor Red }
 
-if (-not $crypto32) {
-    Write-Host "`n [!] WARNING: 32-Bit Crypto keys are missing. Citrix Service will fail!" -ForegroundColor Red
+# Hide SystemDefaultTlsVersions if missing (OS Default), only show if present.
+if ($tlsDef64) { 
+    Write-Host " SystemDefaultTlsVersions (64) : " -NoNewline
+    Write-Host "[ OK ]" -ForegroundColor Green 
+}
+
+if ($tlsDef32) { 
+    Write-Host " SystemDefaultTlsVersions (32) : " -NoNewline
+    Write-Host "[ OK ]" -ForegroundColor Green 
+}
+
+# AUTO-FIX LOGIC: Only strictly enforce StrongCrypto
+$missingCrypto = (-not $crypto64 -or -not $crypto32)
+
+if ($missingCrypto) {
+    Write-Host "`n [!] REGISTRY STATUS REPORT:" -ForegroundColor Yellow
+    Write-Host "     - 'SchUseStrongCrypto' is MISSING. This is CRITICAL." -ForegroundColor Red
+    
+    Write-Host "`n -> Attempting to apply fixes (Requires Admin)..." -ForegroundColor Cyan
+    
+    try {
+        Set-ItemProperty -Path $regPath64 -Name "SchUseStrongCrypto" -Value 1 -Type DWord -Force -ErrorAction Stop
+        Set-ItemProperty -Path $regPath32 -Name "SchUseStrongCrypto" -Value 1 -Type DWord -Force -ErrorAction Stop
+        
+        Write-Host "     [ FIXED ] Strong Crypto enabled." -ForegroundColor Green
+        Write-Host "`n [!] PLEASE REBOOT SERVER FOR CHANGES TO TAKE EFFECT." -ForegroundColor Cyan -BackgroundColor DarkBlue
+    } catch {
+        Write-Host " [ FAIL ] Could not write to Registry. Are you running as Administrator?" -ForegroundColor Red
+        Write-Host "          Error: $($_.Exception.Message)" -ForegroundColor Red
+    }
 }
 Write-Host "`n"
 
@@ -286,15 +317,13 @@ foreach ($t in $targets) {
     $pName = $t.N.PadRight(25)
     Write-Host " $pName : " -NoNewline
     
-    # --- COOLNESS FACTOR: ARTIFICIAL SPINNER DELAY ---
+    # Spinner Effect
     $spin = @("-", "\", "|", "/")
-    # Simulates approx. 1.2 seconds "Deep Analysis"
     for ($s=0; $s -lt 15; $s++) {
         Write-Host $spin[$s % 4] -NoNewline -ForegroundColor Cyan
         Start-Sleep -Milliseconds 80
         Write-Host "`b" -NoNewline
     }
-    # -------------------------------------------------
     
     try {
         $req = [System.Net.HttpWebRequest]::Create($t.U)
@@ -303,7 +332,10 @@ foreach ($t in $targets) {
         $resp = $req.GetResponse()
         $c = [int]$resp.StatusCode
         
-        # TIME CHECK (Only once)
+        # Server Header check to identify Proxy vs Real Server
+        $srvHeader = $resp.Headers["Server"]
+        
+        # Time Check (Only once)
         if (-not $timeChecked -and $resp.Headers["Date"]) {
             # Explicitly convert to UTC before comparison
             $serverTime = [DateTime]::Parse($resp.Headers["Date"]).ToUniversalTime()
@@ -334,27 +366,33 @@ foreach ($t in $targets) {
         $r = $ex.Response
         if ($r) {
             $c = [int]$r.StatusCode
+            $srvHeader = $r.Headers["Server"]
             
-            # TIME CHECK on Error Response
+            # Time Check on Error Response
             if (-not $timeChecked -and $r.Headers["Date"]) {
                 $serverTime = [DateTime]::Parse($r.Headers["Date"]).ToUniversalTime()
                 $localTime = [DateTime]::UtcNow
                 $diff = ($serverTime - $localTime).TotalSeconds
                 $timeChecked = $true
-                $timeStatus = "OK"
-                $timeColor = "Green"
+                $timeStatus = "OK"; $timeColor = "Green"
                  if ([Math]::Abs($diff) -gt 300) { $timeStatus = "FAIL"; $timeColor = "Red" }
                 $globalTimeDriftMsg = "Drift: $([Math]::Round($diff, 1)) sec"
                 $globalTimeDriftColor = $timeColor
             }
 
             $r.Close()
-            if ($c -eq 403 -or $c -eq 404) {
+            
+            # LOGIC FIX: 403 is often a Proxy Block, 404 is usually Endpoint Reachable
+            if ($c -eq 404) {
                 Write-Host "[ PASS ]" -ForegroundColor Green -NoNewline
-                Write-Host " (HTTP $c - Reachable - SSL: Verified)" -ForegroundColor Gray
+                Write-Host " (HTTP 404 - Reachable)" -ForegroundColor Gray
+            } elseif ($c -eq 403) {
+                Write-Host "[ WARN ]" -ForegroundColor Yellow -NoNewline
+                Write-Host " (HTTP 403 - Forbidden/Proxy Block?)" -ForegroundColor Yellow
+                if ($srvHeader) { Write-Host " Server: $srvHeader" -ForegroundColor DarkGray }
             } else {
                 Write-Host "[ WARN ]" -ForegroundColor Yellow -NoNewline
-                Write-Host " (HTTP $c - SSL: Verified)" -ForegroundColor Gray
+                Write-Host " (HTTP $c)" -ForegroundColor Gray
             }
         } else {
             Write-Host "[ FAIL ]" -ForegroundColor Red -NoNewline
@@ -364,7 +402,6 @@ foreach ($t in $targets) {
 }
 Write-Host "`n"
 
-# Summary for Time Sync
 if ($timeChecked) {
     Write-Host " TIME SYNC CHECK : " -NoNewline
     if ($globalTimeDriftColor -eq "Green") {
