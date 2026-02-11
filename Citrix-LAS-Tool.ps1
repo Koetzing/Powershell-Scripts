@@ -17,7 +17,7 @@
     www.koetzingit.de
 
 .VERSION
-    2.32.0.0
+    2.33.0.0
 
 .DATE
     2026-02-11
@@ -33,7 +33,7 @@ $regPath32 = "HKLM:\SOFTWARE\Wow6432Node\Microsoft\.NetFramework\v4.0.30319"
 function Write-Banner {
     Clear-Host
     Write-Host "===================================================================" -ForegroundColor Cyan
-    Write-Host "   CITRIX LAS CONNECTIVITY & HEALTH CHECK v2.32" -ForegroundColor White
+    Write-Host "   CITRIX LAS CONNECTIVITY & HEALTH CHECK v2.33" -ForegroundColor White
     Write-Host "   (c) Koetzing IT - www.koetzingit.de" -ForegroundColor Gray
     Write-Host "===================================================================" -ForegroundColor Cyan
     Write-Host "`n"
@@ -277,10 +277,16 @@ Write-Host " PHASE 4: NETWORK CONFIGURATION" -ForegroundColor Yellow
 Write-Host " ------------------------------" -ForegroundColor DarkGray
 Show-Spinner "Detecting Proxy Configuration..."
 
+# 1. Current User (IE) Settings
 $activeProxy = $null
+$userProxyFound = $false
+$userProxyAddress = ""
+
 if ($ManualProxy) {
     $activeProxy = New-Object System.Net.WebProxy($ManualProxy)
-    Write-Host " MODE: MANUAL ($ManualProxy)" -ForegroundColor Cyan
+    Write-Host " MODE (User): MANUAL ($ManualProxy)" -ForegroundColor Cyan
+    $userProxyFound = $true
+    $userProxyAddress = $ManualProxy
 } else {
     $sysProxy = [System.Net.WebRequest]::GetSystemWebProxy()
     $sysProxy.Credentials = [System.Net.CredentialCache]::DefaultCredentials
@@ -288,13 +294,60 @@ if ($ManualProxy) {
     $proxyUri = $sysProxy.GetProxy($testUrl)
     
     if (([System.Uri]$testUrl).Host -ne $proxyUri.Host) {
-        Write-Host " MODE: SYSTEM PROXY DETECTED ($($proxyUri.Authority))" -ForegroundColor Cyan
+        $userProxyAddress = "$($proxyUri.Host):$($proxyUri.Port)"
+        Write-Host " MODE (User): SYSTEM PROXY DETECTED ($userProxyAddress)" -ForegroundColor Cyan
         $activeProxy = $sysProxy
+        $userProxyFound = $true
     } else {
-        Write-Host " MODE: DIRECT CONNECTION (No Proxy)" -ForegroundColor Green
+        Write-Host " MODE (User): DIRECT CONNECTION (No Proxy)" -ForegroundColor Green
         $activeProxy = $sysProxy
     }
 }
+
+# 2. WinHTTP (System) Settings Check via netsh
+$netshOutput = netsh winhttp show proxy
+$winHttpProxyFound = $false
+$winHttpMsg = "DIRECT (No Proxy set)"
+$winHttpColor = "Green"
+
+# Parse netsh output (Look for address pattern to be language independent)
+foreach ($line in $netshOutput) {
+    # Looks for something like ":  10.0.0.1:8080"
+    if ($line -match ":\s+([0-9a-zA-Z\.\-_]+:[0-9]+)") {
+        $winHttpProxyFound = $true
+        $winHttpMsg = "PROXY SET ($($matches[1]))"
+        $winHttpColor = "Cyan"
+        break
+    }
+}
+
+Write-Host " MODE (Sys) : WinHTTP $winHttpMsg" -ForegroundColor $winHttpColor
+
+# 3. Compare and Fix
+# Critical mismatch: User has proxy, but System (Service) has none.
+if ($userProxyFound -and -not $winHttpProxyFound) {
+    Write-Host "`n [!] MISMATCH DETECTED: User has proxy, but System (WinHTTP) is Direct." -ForegroundColor Red
+    Write-Host "     Citrix Licensing Service runs as SYSTEM and needs WinHTTP proxy!" -ForegroundColor Yellow
+    
+    $response = Read-Host "`n -> Do you want to import IE Proxy settings to WinHTTP now? (y/n)"
+    if ($response -eq "y") {
+        try {
+            # Auto-fix: Import from IE
+            $fixOut = netsh winhttp import proxy source=ie
+            Write-Host "     [ FIXED ] Output: $fixOut" -ForegroundColor Green
+        } catch {
+            Write-Host "     [ FAIL ] Could not set WinHTTP proxy. Run as Admin?" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "     [ INFO ] Skipped. Please set proxy manually using 'netsh winhttp set proxy ...'" -ForegroundColor Gray
+    }
+}
+elseif ($ManualProxy -and -not $winHttpProxyFound) {
+     Write-Host "`n [!] ADVICE: You are testing with a manual proxy ($ManualProxy)." -ForegroundColor Yellow
+     Write-Host "     To set this for the System Service, run:" -ForegroundColor Gray
+     Write-Host "     netsh winhttp set proxy $ManualProxy" -ForegroundColor White
+}
+
 Write-Host "`n"
 
 # 5. ENDPOINT ANALYZER & TIME SYNC
