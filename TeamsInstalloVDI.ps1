@@ -14,7 +14,7 @@
 .PLATFORM
     Windows Server 2019, 2022, 2025, Windows 10/11
 .AUTHOR
-    Citrix Expert / Koetzing IT
+    Thomas Koetzing | www.koetzingit.de
 .DATE
     2026-02-11
 .VERSION
