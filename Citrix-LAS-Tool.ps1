@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Citrix LAS Diagnostic Tool
+    Citrix LAS Diagnostic Tool - ULTIMATE EDITION
     Features: Registry-Deep-Scan, Smart Connectivity Check, Version Check, Service Check, Time Sync, Auto-Fix
 
 .DESCRIPTION
@@ -8,7 +8,7 @@
     Checks API endpoints, SSL certificates, proxy configurations, and registry keys.
     Additionally checks services and time synchronization (Time Drift).
     Evaluates HTTP 403/404 status codes correctly as successful connections.
-    Attempts to auto-fix missing TLS registry keys.
+    Attempts to auto-fix missing TLS registry keys and system proxy settings.
 
 .AUTHOR
     Thomas Koetzing
@@ -17,10 +17,10 @@
     www.koetzingit.de
 
 .VERSION
-    2.29.0.0
+    2.32.0.0
 
 .DATE
-    2026-02-09
+    2026-02-11
 #>
 param([string]$ManualProxy = "")
 
@@ -33,7 +33,7 @@ $regPath32 = "HKLM:\SOFTWARE\Wow6432Node\Microsoft\.NetFramework\v4.0.30319"
 function Write-Banner {
     Clear-Host
     Write-Host "===================================================================" -ForegroundColor Cyan
-    Write-Host "   CITRIX LAS CONNECTIVITY & HEALTH CHECK v2.29" -ForegroundColor White
+    Write-Host "   CITRIX LAS CONNECTIVITY & HEALTH CHECK v2.32" -ForegroundColor White
     Write-Host "   (c) Koetzing IT - www.koetzingit.de" -ForegroundColor Gray
     Write-Host "===================================================================" -ForegroundColor Cyan
     Write-Host "`n"
