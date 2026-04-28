@@ -1,11 +1,11 @@
 <#
 .SYNOPSIS
     Citrix LAS Diagnostic Tool - ULTIMATE EDITION
-    Features: Registry-Deep-Scan, Smart Connectivity Check, Version Check, Service Check, Time Sync, Auto-Fix
+    Features: Registry-Deep-Scan, Smart Connectivity Check, Version Check, Service Check, Time Sync, Auto-Fix, EU Region Support
 
 .DESCRIPTION
     Diagnostic tool for Citrix Cloud License Server connectivity.
-    Checks API endpoints, SSL certificates, proxy configurations, and registry keys.
+    Checks API endpoints (US and EU), SSL certificates, proxy configurations, and registry keys.
     Additionally checks services and time synchronization (Time Drift).
     Evaluates HTTP 403/404 status codes correctly as successful connections.
     Attempts to auto-fix missing TLS registry keys and system proxy settings.
@@ -17,10 +17,13 @@
     www.koetzingit.de
 
 .VERSION
-    2.33.0.0
+    2.34.0.0
 
 .DATE
-    2026-02-11
+    2026-04-28
+
+.NOTES
+    Added support for Citrix Cloud EU region endpoints (api-eu.cloud.com).
 #>
 param([string]$ManualProxy = "")
 
@@ -33,7 +36,7 @@ $regPath32 = "HKLM:\SOFTWARE\Wow6432Node\Microsoft\.NetFramework\v4.0.30319"
 function Write-Banner {
     Clear-Host
     Write-Host "===================================================================" -ForegroundColor Cyan
-    Write-Host "   CITRIX LAS CONNECTIVITY & HEALTH CHECK v2.33" -ForegroundColor White
+    Write-Host "   CITRIX LAS CONNECTIVITY & HEALTH CHECK v2.34" -ForegroundColor White
     Write-Host "   (c) Koetzing IT - www.koetzingit.de" -ForegroundColor Gray
     Write-Host "===================================================================" -ForegroundColor Cyan
     Write-Host "`n"
@@ -355,13 +358,15 @@ Write-Host " PHASE 5: ENDPOINT ANALYZER & TIME SYNC" -ForegroundColor Yellow
 Write-Host " --------------------------------------" -ForegroundColor DarkGray
 Show-Spinner "Testing Cloud Endpoints..."
 
+# Added EU specific endpoint support
 $targets = @(
-    @{ N="Activation Service";    U="https://las.cloud.com" },
-    @{ N="Telemetry / CIS";       U="https://cis.citrix.com" },
-    @{ N="Trust API (Network)";   U="https://trust.citrixnetworkapi.net" },
-    @{ N="Trust API (Workspace)"; U="https://trust.citrixworkspacesapi.net" },
-    @{ N="Core Services";         U="https://core.citrixworkspacesapi.net" },
-    @{ N="Customer Services";     U="https://customers.citrixworkspacesapi.net" }
+    @{ N="Activation Service (US)"; U="https://las.cloud.com" },
+    @{ N="Activation Service (EU)"; U="https://api-eu.cloud.com" },
+    @{ N="Telemetry / CIS";         U="https://cis.citrix.com" },
+    @{ N="Trust API (Network)";     U="https://trust.citrixnetworkapi.net" },
+    @{ N="Trust API (Workspace)";   U="https://trust.citrixworkspacesapi.net" },
+    @{ N="Core Services";           U="https://core.citrixworkspacesapi.net" },
+    @{ N="Customer Services";       U="https://customers.citrixworkspacesapi.net" }
 )
 
 $timeChecked = $false
